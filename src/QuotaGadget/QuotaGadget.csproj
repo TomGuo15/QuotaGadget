@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <ApplicationIcon>Assets\Gadget.ico</ApplicationIcon>
+    <Version>0.6.0</Version>
+    <FileVersion>$(Version)</FileVersion>
+    <Product>QuotaGadget</Product>
+    <Authors>Taoming Guo</Authors>
+    <Description>Lightweight Windows desktop gadget for Codex, Claude Code, and Antigravity quotas.</Description>
+    <PublishAot>true</PublishAot>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <OptimizationPreference>Size</OptimizationPreference>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <DebugType>embedded</DebugType>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <StackTraceSupport>false</StackTraceSupport>
+    <EventSourceSupport>false</EventSourceSupport>
+    <HttpActivityPropagationSupport>false</HttpActivityPropagationSupport>
+    <DebuggerSupport>false</DebuggerSupport>
+    <StripSymbols>true</StripSymbols>
+    <DebugType>none</DebugType>
+    <CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>
+  </PropertyGroup>
+  <ItemGroup>
+    <LinkerArg Condition="'$(DebugType)' != 'none'" Include="/PDBALTPATH:%_PDB%" />
+    <EmbeddedResource Include="Assets/*.png" />
+    <Using Include="System.IO" />
+    <Using Include="System.Net.Http" />
+    <InternalsVisibleTo Include="QuotaGadget.Tests" />
+  </ItemGroup>
+</Project>

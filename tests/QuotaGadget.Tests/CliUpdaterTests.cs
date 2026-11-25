@@ -106,7 +106,7 @@ public class CliUpdaterTests
 
         var result = await fixture.Updater(inUse: provider => provider == Provider.Antigravity).RunAsync(CancellationToken.None);
 
-        Assert.Equal(new CliUpdateResult(false, false, "Skipped 1 (in use) · failed 1"), result);
+        Assert.Equal(new CliUpdateResult(false, false, "Skipped agy (in use) · failed 1"), result);
         Assert.Equal(new[] { "codex --version", "codex update" }, fixture.Commands);
     }
 
@@ -120,11 +120,65 @@ public class CliUpdaterTests
         try
         {
             var result = await fixture.Updater().RunAsync(CancellationToken.None);
-            Assert.Equal(new CliUpdateResult(true, false, "Skipped 1 (in use)"), result);
+            Assert.Equal(new CliUpdateResult(true, false, "Skipped agy (in use)"), result);
             Assert.Empty(fixture.Commands);
         }
         finally { gate.Release(); }
     }
+
+    [Theory]
+    [InlineData("Codex", "Claude,Antigravity", false, "Skipped Codex (in use) · 2 up to date")]
+    [InlineData("Codex,Antigravity", "Claude", false, "Skipped Codex, agy (in use) · 1 up to date")]
+    [InlineData("Codex,Claude", "", true, "Skipped Codex, Claude (in use)")]
+    public async Task BusyCliStatusNamesSkippedProvidersAndReportsUnchangedCount(
+        string busyList, string idleList, bool expectedAllInUse, string expectedMessage)
+    {
+        var busy = ParseProviders(busyList);
+        var idle = ParseProviders(idleList);
+        using var fixture = new CliFixture();
+        foreach (var provider in busy.Concat(idle))
+            fixture.WriteCli(CliFixture.CliName(provider), "1.2.3", "1.2.3");
+
+        var result = await fixture.Updater(inUse: provider => busy.Contains(provider)).RunAsync(CancellationToken.None);
+
+        Assert.Equal(new CliUpdateResult(expectedAllInUse, false, expectedMessage), result);
+        Assert.Equal(idle.SelectMany(provider =>
+        {
+            string cli = CliFixture.CliName(provider);
+            return new[] { $"{cli} --version", $"{cli} update", $"{cli} --version" };
+        }), fixture.Commands);
+    }
+
+    [Fact]
+    public async Task MixedFailureSkipAndUnchangedIncludesAllSegmentsInOrder()
+    {
+        using var fixture = new CliFixture();
+        fixture.WriteCli("codex", "codex-cli 1.2.3", "codex-cli 1.2.4", exitCode: 7);
+        fixture.WriteCli("claude", "2.3.4 (Claude Code)", "2.3.4 (Claude Code)");
+        fixture.WriteCli("agy", "3.4.5", "3.4.6");
+
+        var result = await fixture.Updater(inUse: provider => provider == Provider.Antigravity).RunAsync(CancellationToken.None);
+
+        Assert.Equal(new CliUpdateResult(false, false, "Skipped agy (in use) · failed 1 · 1 up to date"), result);
+        Assert.Equal(new[] { "codex --version", "codex update", "claude --version", "claude update", "claude --version" },
+            fixture.Commands);
+    }
+
+    [Theory]
+    [InlineData(96)]
+    [InlineData(120)]
+    [InlineData(144)]
+    [InlineData(192)]
+    public void BusyAndUnchangedFooterTextFitsWithinGadgetWidthAcrossDpis(int dpi)
+    {
+        using var painter = new Painter();
+        Assert.InRange(painter.Measure("Skipped Codex (in use) · 2 up to date", dpi, 11),
+            1, Layout.Width - 2 * Layout.Margin);
+    }
+
+    private static Provider[] ParseProviders(string csv) => string.IsNullOrEmpty(csv)
+        ? []
+        : csv.Split(',').Select(Enum.Parse<Provider>).ToArray();
 
     [Fact]
     public async Task SuccessfulAgyUpdateInvalidatesPreviouslyCachedVersion()
@@ -247,10 +301,12 @@ public class CliUpdaterTests
             TimeSpan? timeout = null, Func<string>? findNpm = null) =>
             new(antigravity ?? new(), Find, inUse ?? (_ => false), timeout, findNpm);
 
+        internal static string CliName(Provider provider) =>
+            provider switch { Provider.Codex => "codex", Provider.Claude => "claude", _ => "agy" };
+
         private string Find(Provider provider)
         {
-            string cli = provider switch { Provider.Codex => "codex", Provider.Claude => "claude", _ => "agy" };
-            var file = Path.Combine(DirectoryPath, cli + ".cmd");
+            var file = Path.Combine(DirectoryPath, CliName(provider) + ".cmd");
             return File.Exists(file) ? file : throw new Win32Exception(2);
         }
 

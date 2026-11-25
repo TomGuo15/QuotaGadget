@@ -12,7 +12,8 @@ internal sealed class CliUpdater(AntigravityQuota antigravity, Func<Provider, st
 
     internal async Task<CliUpdateResult> RunAsync(CancellationToken ct)
     {
-        int skipped = 0, unchanged = 0, upgraded = 0, failed = 0;
+        List<string> skipped = [];
+        int unchanged = 0, upgraded = 0, failed = 0;
         bool desktopManaged = false;
         string? upgrade = null;
         var environment = readEnvironment ?? Environment.GetEnvironmentVariable;
@@ -27,15 +28,15 @@ internal sealed class CliUpdater(AntigravityQuota antigravity, Func<Provider, st
                 if (Login.IsDesktopManagedCli(cli, environment)) { desktopManaged = true; continue; }
 
                 var gate = Login.CliGate(provider);
-                if (!gate.Wait(0, ct)) { skipped++; continue; }
+                if (!gate.Wait(0, ct)) { skipped.Add(DisplayName(provider)); continue; }
                 try
                 {
-                    if (IsInUse(provider)) { skipped++; continue; }
+                    if (IsInUse(provider)) { skipped.Add(DisplayName(provider)); continue; }
                     using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
                     deadline.CancelAfter(timeout ?? TimeSpan.FromSeconds(120));
                     string? before = await ReadVersionAsync(cli, provider, deadline.Token).ConfigureAwait(false);
                     if (before == null) { failed++; continue; }
-                    if (IsInUse(provider)) { skipped++; continue; }
+                    if (IsInUse(provider)) { skipped.Add(DisplayName(provider)); continue; }
                     // An interrupted update may already have replaced agy on disk.
                     if (provider == Provider.Antigravity) antigravity.InvalidateVersion();
                     if (!await UpdateAsync(cli, provider, deadline.Token).ConfigureAwait(false)) { failed++; continue; }
@@ -59,12 +60,13 @@ internal sealed class CliUpdater(AntigravityQuota antigravity, Func<Provider, st
 
         ct.ThrowIfCancellationRequested();
         List<string> parts = [];
-        if (upgraded > 0) parts.Add(upgraded == 1 && skipped == 0 && failed == 0 ? upgrade! : $"Updated {upgraded}");
-        if (skipped > 0) parts.Add($"{(parts.Count == 0 ? "Skipped" : "skipped")} {skipped} (in use)");
+        if (upgraded > 0) parts.Add(upgraded == 1 && skipped.Count == 0 && failed == 0 ? upgrade! : $"Updated {upgraded}");
+        if (skipped.Count > 0) parts.Add($"{(parts.Count == 0 ? "Skipped" : "skipped")} {string.Join(", ", skipped)} (in use)");
         if (failed > 0) parts.Add($"{(parts.Count == 0 ? "Failed" : "failed")} {failed}");
+        if (unchanged > 0 && (skipped.Count > 0 || failed > 0)) parts.Add($"{unchanged} up to date");
         if (parts.Count == 0)
             parts.Add(unchanged > 0 ? "CLIs up to date" : desktopManaged ? "Desktop apps manage these CLIs" : "No CLIs found");
-        return new(skipped > 0 && unchanged == 0 && upgraded == 0 && failed == 0, upgraded > 0, string.Join(" · ", parts));
+        return new(skipped.Count > 0 && unchanged == 0 && upgraded == 0 && failed == 0, upgraded > 0, string.Join(" · ", parts));
     }
 
     private bool IsInUse(Provider provider) => (isInUse ?? CliProcesses.IsInUse)(provider);
